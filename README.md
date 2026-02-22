@@ -8,7 +8,7 @@ A Python script that parses multi-sheet Excel files and generates a structured s
 
 - Processes multiple named sheets from a single Excel file
 - Auto-detects header rows and key columns (price, area, rooms, status, ID)
-- Filters apartments by availability status (`вільно`)
+- Filters apartments by availability status (`available`)
 - Supports mixed sheets where the complex name is derived from the apartment ID
 - Outputs a formatted `.xlsx` summary report with min/max area, price per m², and total price — each annotated with the corresponding apartment ID
 
@@ -86,6 +86,24 @@ python main.py data.xlsx -v --preview
 
 ---
 
+## Expected Input Format
+
+Your Excel file should contain sheets with headers that include some of the following column names (exact names or close variants):
+
+| Data | Expected Header Examples |
+|---|---|
+| Price per m² | `price per meter`, `price per 1 m (sale)` |
+| Total price | `sale price`, `total price` |
+| Room count | `Rooms`, `Room Count`, `Room`, `Size` |
+| Area | `Area` |
+| Status | `Status`, `State`, `Availability` |
+| Unit ID | `ID`, `Number`, `Unit` |
+| Complex | `Complex`, `Building`, `Project` |
+
+The script will auto-detect the header row even if the first few rows contain merged cells or metadata.
+
+---
+
 ## Output
 
 The script produces a single-sheet Excel file (`Summary`) with the following columns:
@@ -96,23 +114,18 @@ The script produces a single-sheet Excel file (`Summary`) with the following col
 | `ROOMS` | Number of rooms (1, 2, or 3) |
 | `MIN_AREA` | Smallest available unit area (m²) |
 | `MAX_AREA` | Largest available unit area (m²) |
-| `MIN_PRICE_PER_M2` | Lowest price per m² and apartment ID |
-| `MAX_PRICE_PER_M2` | Highest price per m² and apartment ID |
-| `MIN_TOTAL_PRICE` | Cheapest total price and apartment ID |
+| `MIN_PRICE_PER_M2` | Lowest price per m² and unit ID |
+| `MAX_PRICE_PER_M2` | Highest price per m² and unit ID |
+| `MIN_TOTAL_PRICE` | Cheapest total price and unit ID |
 
 Rows are sorted by complex name and room count.
 
 ---
 
-## Column Detection Logic
-
-The script uses fuzzy keyword matching to locate the right columns in each sheet. It looks for Ukrainian-language headers by default (e.g. `ціна за метр`, `Площа`, `Статус`, `Розмір`) with fallback patterns for variations. If your source file uses different header names, extend the matching logic in `process_sheet()`.
-
----
-
 ## Notes
 
-- Only apartments with status `вільно` (available) are included.
+- Only units with status `available` are included.
 - Only units with 1, 2, or 3 rooms are processed.
 - Rows missing both price per m² and total price are skipped.
-- Currency values support `$`, `грн`, commas, and non-breaking spaces.
+- Currency values support `$`, `uah`, commas, and non-breaking spaces.
+- If no `Complex` / `Building` column is found in a sheet, the sheet name is used as the group name.

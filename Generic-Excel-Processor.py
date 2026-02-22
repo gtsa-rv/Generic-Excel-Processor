@@ -85,7 +85,7 @@ def clean_currency(val) -> Optional[float]:
     if pd.isna(val):
         return None
 
-    s = str(val).replace(' ', '').replace('$', '').replace('грн', '')
+    s = str(val).replace(' ', '').replace('$', '').replace('uah', '')
     s = s.replace(',', '.').replace('\xa0', '')
 
     try:
@@ -95,7 +95,7 @@ def clean_currency(val) -> Optional[float]:
 
 
 def extract_room_count(val) -> Optional[int]:
-    """Extract room count from string (e.g., '1M' -> 1, '2к' -> 2)"""
+    """Extract room count from string (e.g., '1R' -> 1, '2 rooms' -> 2)"""
     if pd.isna(val):
         return None
 
@@ -116,12 +116,12 @@ def find_header_row(df: pd.DataFrame, keywords: List[str] = None) -> int:
 
     Args:
         df: DataFrame with potentially merged cells
-        keywords: Keywords to search for (default: ['ID', 'Статус'])
+        keywords: Keywords to search for (default: ['ID', 'Status'])
 
     Returns:
         Index of header row
     """
-    keywords = [normalize_text(kw) for kw in (keywords or ['ID', 'Статус', 'Площа', 'ціна'])]
+    keywords = [normalize_text(kw) for kw in (keywords or ['ID', 'Status', 'Area', 'Price'])]
 
     for i, row in df.iterrows():
         normalized_cells = [normalize_text(cell) for cell in row.tolist()]
@@ -165,13 +165,13 @@ def process_sheet(df: pd.DataFrame, sheet_name: str, verbose: bool = False) -> L
     # COLUMN IDENTIFICATION (PRIORITY ORDER)
     # ========================================================================
 
-    # 1. Price per meter - Look for "ціна за метр" (standard price, NOT discount)
+    # 1. Price per meter - Look for "price per meter" (standard price, NOT discount)
     price_m2_col = None
     for col in df.columns:
         col_str = str(col).strip()
         col_norm = normalize_text(col)
-        # Priority 1: Exact "ціна за метр" (with possible trailing space)
-        if col_norm == 'ціна за метр' or col_str == 'ціна за метр ':
+        # Priority 1: Exact "price per meter" (with possible trailing space)
+        if col_norm == 'price per meter' or col_str == 'price per meter ':
             price_m2_col = col
             break
 
@@ -180,21 +180,21 @@ def process_sheet(df: pd.DataFrame, sheet_name: str, verbose: bool = False) -> L
         for col in df.columns:
             col_norm = normalize_text(col)
             # Example fallback pattern with extra notes in the source header text.
-            if 'ціна за 1 м' in col_norm and 'видаляти' in col_norm:
+            if 'price per 1 m' in col_norm and 'delete' in col_norm:
                 price_m2_col = col
                 break
             # Generic sale-price-per-meter fallback.
-            elif ('ціна' in col_norm and 'м' in col_norm and 'продаж' in col_norm):
-                if 'базов' not in col_norm and 'старт' not in col_norm:
+            elif ('price' in col_norm and 'm' in col_norm and 'sale' in col_norm):
+                if 'base' not in col_norm and 'start' not in col_norm:
                     price_m2_col = col
                     break
 
-    # 2. Total Price - Look for "Вартість для продажу" (standard, NOT discount)
+    # 2. Total Price - Look for "sale price" (standard, NOT discount)
     total_price_col = None
     for col in df.columns:
         col_norm = normalize_text(col)
-        # Priority: "Вартість для продажу"
-        if 'вартість для продажу' in col_norm:
+        # Priority: "sale price"
+        if 'sale price' in col_norm:
             total_price_col = col
             break
 
@@ -202,49 +202,49 @@ def process_sheet(df: pd.DataFrame, sheet_name: str, verbose: bool = False) -> L
     if not total_price_col:
         for col in df.columns:
             col_norm = normalize_text(col)
-            if 'вартість' in col_norm and 'видаляти' in col_norm:
+            if 'price' in col_norm and 'delete' in col_norm:
                 total_price_col = col
                 break
-            # Last fallback: "Вартість ПРОДАЖУ"
-            elif 'вартість продажу' in col_norm:
+            # Last fallback: "total price"
+            elif 'total price' in col_norm:
                 total_price_col = col
                 break
 
-    # 4. Rooms - Must be exact "Розмір" not "Націнка за розмір"
+    # 4. Rooms - Must be exact "Rooms" not "Size markup"
     rooms_col = None
     for col in df.columns:
         col_str = str(col).strip()
         # Exact match or close variants
-        if col_str in ['Розмір', 'Rooms', 'К-сть кімнат', 'Кімнат']:
+        if col_str in ['Rooms', 'Room Count', 'Room', 'Size']:
             rooms_col = col
             break
         # If not found, try lowercase match
-        if normalize_text(col) == 'розмір':
+        if normalize_text(col) == 'rooms':
             rooms_col = col
             break
 
-    # 5. Area - Must be exact "Площа" not "площа оновлена"
+    # 5. Area - Must be exact "Area" not "updated area"
     area_col = None
     for col in df.columns:
         col_norm = normalize_text(col)
-        if col_norm == 'площа':  # Exact match only
+        if col_norm == 'area':  # Exact match only
             area_col = col
             break
 
-    # 6. Status - Look for "Статус" column specifically
+    # 6. Status - Look for "Status" column specifically
     status_col = find_best_column(df, [
-        ['статус'],
-        ['стан', 'state'],
+        ['status'],
+        ['state', 'availability'],
     ])
 
     # 7. ID
     id_col = find_best_column(df, [
-        ['id', 'номер'],
+        ['id', 'number', 'unit'],
     ])
 
-    # 8. Complex (ЖК)
+    # 8. Complex
     complex_col = find_best_column(df, [
-        ['жк', 'complex', 'building'],
+        ['complex', 'building', 'project'],
     ])
 
     if verbose:
@@ -266,8 +266,8 @@ def process_sheet(df: pd.DataFrame, sheet_name: str, verbose: bool = False) -> L
         # Get status
         status_val = str(row.get(status_col, '')).lower() if status_col else ''
 
-        # Filter: Only 'вільно' (available)
-        if 'вільно' not in status_val:
+        # Filter: Only "available"
+        if 'available' not in status_val:
             continue
 
         # Get room count
